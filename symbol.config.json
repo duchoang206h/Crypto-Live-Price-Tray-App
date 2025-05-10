@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "BTC",
+    "order": 0,
+    "decimal": 1
+  },
+  {
+    "symbol": "ETH",
+    "order": 1,
+    "decimal": 1
+  },
+  {
+    "symbol": "SOL",
+    "order": 2,
+    "decimal": 2
+  },
+  {
+    "symbol": "SUI",
+    "order": 3,
+    "decimal": 3
+  }
+]
