@@ -5,20 +5,35 @@ let dataMap = new Map();
 const symbolConfigs = require("./symbol.config.json");
 const symbolMap = {};
 const symbols = [];
+const HEARTBEAT_TIMEOUT = 60000; // 60 seconds
+let lastMessageTime = Date.now();
+const retryDelay = 5000;
 
 symbolConfigs.forEach((s) => {
   symbolMap[s.symbol] = { order: s.order, decimal: s.decimal };
   symbols.push(s.symbol + "USDT");
 });
 
+function monitorHeartbeat(tray, symbols) {
+  console.log("Monitoring heartbeat");
+  setInterval(() => {
+    if (Date.now() - lastMessageTime < HEARTBEAT_TIMEOUT) {
+      console.log("Monitoring: Healthy ✅");
+      return;
+    }
+    console.warn("💔 No message from Binance in 60s. Reconnecting...");
+    fetchLivePrices(tray, symbols);
+  }, HEARTBEAT_TIMEOUT / 2); // Check more frequently than timeout
+}
+
 function fetchLivePrices(tray, symbols) {
-  if (symbols.length === 0) return;
-  const streams = symbols
-    .map((symbol) => `${symbol.toLowerCase()}@ticker`)
-    .join("/");
-  const retryDelay = 5000;
-  const connect = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+  try {
+    if (symbols.length === 0) return;
+    const streams = symbols
+      .map((symbol) => `${symbol.toLowerCase()}@ticker`)
+      .join("/");
+
+    if (ws) {
       ws.close(); // Clean up before reconnecting
     }
 
@@ -34,14 +49,16 @@ function fetchLivePrices(tray, symbols) {
       // Get symbol, price, and percentage change
       const symbol = data.s.replace("USDT", "");
       const price = parseFloat(data.c).toFixed(symbolMap[symbol].decimal);
-      const changePercent = Math.abs(parseFloat(data.P).toFixed(1));
+      const changePercent = parseFloat(data.P).toFixed(1);
 
       // Decide color based on change
       const color = changePercent < 0 ? RED : GREEN;
       const arrow = changePercent < 0 ? "↓" : "↑";
 
       // Output
-      const title = `${symbol}${color}${price}${arrow}${changePercent}${RESET}`;
+      const title = `${symbol}${color}${price}${arrow}${Math.abs(
+        changePercent
+      )}${RESET}`;
       dataMap.set(symbol, title);
 
       let titles = [...dataMap];
@@ -56,23 +73,25 @@ function fetchLivePrices(tray, symbols) {
       tray.setTitle(titleString, {
         fontType: "monospacedDigit",
       });
-      //mb.tray.setTitle(`₿ ${coin.price}`);
+      lastMessageTime = Date.now();
     };
 
     ws.onopen = () => console.log("Connected to Binance WebSocket ✅");
-    ws.onerror = (error) => console.error("WebSocket error:", error);
+    ws.onerror = (error) => {};
     ws.onclose = () => {
-      console.log("Websocket closed. Retrying");
-      setTimeout(connect, retryDelay);
+      console.warn("🔌 WS closed. Retrying...");
+      setTimeout(() => fetchLivePrices(tray, symbols), retryDelay);
     };
-  };
-  connect();
+  } catch (error) {
+    console.log("Fetch error: ", error);
+  }
 }
 
 app.whenReady().then(() => {
   const tray = new Tray("icon.png"); // Set your tray icon
 
   fetchLivePrices(tray, symbols);
+  monitorHeartbeat(tray, symbols);
   const RED = "\x1b[31;1m"; // ANSI escape for bright red
   const RESET = "\x1b[0m"; // Reset color
 
